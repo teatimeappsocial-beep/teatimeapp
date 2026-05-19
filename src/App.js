@@ -1,5 +1,10 @@
 import React, { useState, useEffect } from "react";
 
+// Analytics tracking
+function track(event, params){
+  try{if(window.gtag)window.gtag('event',event,params);}catch(e){}
+}
+
 const C = {
   bg:"#FAFAF7",card:"#FFF",green:"#4A7C59",greenLight:"#E8F0E8",
   greenDark:"#3A5F45",terra:"#C4784A",terraLight:"#FDF0E8",
@@ -80,18 +85,19 @@ function App(){
   const[cn,sCn]=useState(4);
 
   useEffect(()=>{setTimeout(()=>sAnim(true),100);},[]);
-  useEffect(()=>{sAnim(false);setTimeout(()=>sAnim(true),50);},[tab,city,act]);
+  useEffect(()=>{sAnim(false);setTimeout(()=>sAnim(true),50);track('page_view',{page:tab,city});},[tab,city,act]);
 
   const fil=teas.filter(t=>t.city===city&&(act==="all"||t.activity===act));
 
-  const doJoin=(id)=>{if(!user){sSS(true);return;}sJoined(p=>p.includes(id)?p.filter(x=>x!==id):[...p,id]);};
-  const doLike=(id)=>{sLiked(p=>p.includes(id)?p.filter(x=>x!==id):[...p,id]);};
-  const doSignup=()=>{if(!sn.trim()||si.length<2)return;const u={name:sn.trim(),bio:sb.trim(),city:sc,interests:si,avatar:sa,trust:5.0};sUser(u);sSS(false);sCity(sc);};
+  const doJoin=(id)=>{if(!user){sSS(true);track('signup_prompt',{trigger:'join'});return;}sJoined(p=>{const t=teas.find(x=>x.id===id);if(p.includes(id))return p.filter(x=>x!==id);track('join_teatime',{teatime_id:id,activity:t?.activity,city:t?.city});return[...p,id];});};
+  const doLike=(id)=>{sLiked(p=>{if(p.includes(id))return p.filter(x=>x!==id);track('like_teatime',{teatime_id:id});return[...p,id];});};
+  const doSignup=()=>{if(!sn.trim()||si.length<2)return;const u={name:sn.trim(),bio:sb.trim(),city:sc,interests:si,avatar:sa,trust:5.0};sUser(u);sSS(false);sCity(sc);track('sign_up',{city:sc,interests:si.join(',')});};
   const doCreate=()=>{
     if(!user){sSS(true);return;}
     if(!ct.trim()||!ca||!cl.trim()||!cd||!cm.trim())return;
     const nt={id:gid(),activity:ca,title:ct.trim(),hn:user.name,ha:user.avatar,city,loc:cl.trim(),date:cd,time:cm.trim(),total:cn,joined:[user.name],likes:0,desc:cx.trim()||"Come join us!"};
     sTeas(p=>[nt,...p]);sCt("");sCa("");sCl("");sCd("");sCm("");sCx("");sCn(4);sCD(true);
+    track('create_teatime',{activity:ca,city,total:cn});
   };
 
   const inp={width:"100%",padding:"12px 14px",borderRadius:12,border:`1px solid ${C.gray}`,fontFamily:F,fontSize:13,outline:"none",marginBottom:10,boxSizing:"border-box",background:C.bg};
