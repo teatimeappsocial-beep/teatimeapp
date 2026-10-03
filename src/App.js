@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
+import { supabase } from "./supabase";
 
 // Analytics tracking
 function track(event, params){
@@ -37,21 +38,10 @@ const ACTS=[
 const CITIES=[{id:"bayarea",label:"Bay Area",icon:"\uD83C\uDF09"},{id:"seattle",label:"Seattle",icon:"\uD83C\uDF32"},{id:"vancouver",label:"Vancouver",icon:"\uD83C\uDFD4\uFE0F"}];
 const AVATARS=["\uD83E\uDDD1","\uD83D\uDC69","\uD83E\uDDD4","\uD83D\uDC68","\uD83D\uDC69\u200D\uD83E\uDDB0","\uD83E\uDDD1\u200D\uD83E\uDDB1","\uD83D\uDC71","\uD83D\uDC71\u200D\u2640\uFE0F"];
 
-const SEEDS=[
-  {id:"s1",activity:"golf",title:"Weekend Morning Round",hn:"David K.",ha:"\uD83E\uDDD4",city:"bayarea",loc:"Crystal Springs GC, Burlingame",date:"2026-06-07",time:"7:30 AM",total:4,joined:["David K."],likes:12,desc:"Casual round, all skill levels. Good conversation, no phones on the course!"},
-  {id:"s2",activity:"hiking",title:"Sunset Hike at Rancho",hn:"Sarah M.",ha:"\uD83D\uDC69\u200D\uD83E\uDDB0",city:"bayarea",loc:"Rancho San Antonio, Cupertino",date:"2026-06-08",time:"5:00 PM",total:6,joined:["Sarah M.","Kevin W."],likes:28,desc:"Easy-moderate 4 mile loop. Sunset from the ridge. Bring water and good vibes!"},
-  {id:"s3",activity:"wine",title:"Thursday Wine & Chat",hn:"Elena R.",ha:"\uD83D\uDC69",city:"bayarea",loc:"Eno Wine Bar, San Jose",date:"2026-06-05",time:"6:30 PM",total:6,joined:["Elena R.","Tom H.","Yuki T.","Soo Jin K."],likes:45,desc:"Weekly wine night. Different varietal each week. No work talk allowed!"},
-  {id:"s4",activity:"ai-learn",title:"AI Tools for Beginners",hn:"Kevin W.",ha:"\uD83E\uDDD1\u200D\uD83D\uDCBB",city:"bayarea",loc:"Philz Coffee, San Mateo",date:"2026-06-07",time:"10:00 AM",total:5,joined:["Kevin W.","Rachel P."],likes:34,desc:"Casual AI session. Bring your laptop. Practical tips for everyday use."},
-  {id:"s5",activity:"water",title:"Paddleboard Morning",hn:"Tom H.",ha:"\uD83C\uDFC4\u200D\u2642\uFE0F",city:"bayarea",loc:"Pillar Point Harbor, Half Moon Bay",date:"2026-06-08",time:"9:00 AM",total:4,joined:["Tom H."],likes:22,desc:"SUP in calm harbor. I have 2 extra boards. Beginners welcome. Coffee after!"},
-  {id:"s6",activity:"interview",title:"Mock Interview Circle",hn:"Rachel P.",ha:"\uD83D\uDC69\u200D\uD83D\uDCBC",city:"bayarea",loc:"Coworking Space, Millbrae",date:"2026-06-04",time:"6:00 PM",total:4,joined:["Rachel P.","Kevin W."],likes:38,desc:"Take turns doing mock interviews with honest feedback. No-judgment zone."},
-  {id:"s7",activity:"hiking",title:"Grouse Grind Saturday",hn:"Michelle L.",ha:"\uD83E\uDDD7\u200D\u2640\uFE0F",city:"vancouver",loc:"Grouse Mountain, North Van",date:"2026-06-07",time:"8:00 AM",total:6,joined:["Michelle L."],likes:19,desc:"The classic grind! Comfortable pace, brunch at the top."},
-  {id:"s8",activity:"coffee",title:"Sunday Coffee Walk",hn:"Jen S.",ha:"\u2615",city:"seattle",loc:"Volunteer Park, Capitol Hill",date:"2026-06-08",time:"10:00 AM",total:6,joined:["Jen S."],likes:52,desc:"Coffee from Victrola, walk through the park, just chat. Every Sunday!"},
-  {id:"s9",activity:"flowers",title:"Spring Arrangement Class",hn:"Yuki T.",ha:"\uD83C\uDF3A",city:"bayarea",loc:"Community Studio, San Carlos",date:"2026-06-07",time:"2:00 PM",total:6,joined:["Yuki T.","Elena R."],likes:31,desc:"Seasonal flower arrangement. All materials provided. $15. No experience needed!"},
-  {id:"s10",activity:"cooking",title:"Korean Home Cooking",hn:"Soo Jin K.",ha:"\uD83D\uDC69\u200D\uD83C\uDF73",city:"bayarea",loc:"Home Kitchen, Millbrae",date:"2026-06-06",time:"6:00 PM",total:4,joined:["Soo Jin K.","Elena R."],likes:67,desc:"Kimchi jjigae and japchae from scratch. Take home leftovers!"},
-];
 
-function gid(){return"t"+Date.now()+Math.random().toString(36).substr(2,5);}
 function ga(id){return ACTS.find(a=>a.id===id)||ACTS[0];}
+function today(){const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
+function toCard(r){const rs=r.rsvps||[];return{id:r.id,host_id:r.host_id,activity:r.activity,title:r.title,hn:r.host?.name||"Someone",ha:r.host?.avatar||"\uD83E\uDDD1",city:r.city,loc:r.location,date:r.meet_date,time:r.meet_time,total:r.max_spots,joinedIds:rs.map(x=>x.user_id),joined:rs.map(x=>x.profiles?.name||"Member"),desc:r.description||"Come join us!"};}
 function fd(d){if(!d)return"";try{return new Date(d+"T00:00:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"});}catch(e){return d;}}
 
 function App(){
@@ -62,12 +52,19 @@ function App(){
   const[showC,sSC]=useState(false);
   const[cDone,sCD]=useState(false);
   const[showS,sSS]=useState(false);
-  const[showOb,sOb]=useState(true);
+  const[showOb,sOb]=useState(()=>{try{return localStorage.getItem("tt_seen_intro")!=="1";}catch(e){return true;}});
   const[obS,sObS]=useState(0);
+  const[session,sSession]=useState(null);
   const[user,sUser]=useState(null);
-  const[teas,sTeas]=useState([...SEEDS]);
-  const[joined,sJoined]=useState([]);
-  const[liked,sLiked]=useState([]);
+  const[teas,sTeas]=useState([]);
+  const[loading,sLoading]=useState(true);
+  const[busy,sBusy]=useState(false);
+  const[msg,sMsg]=useState("");
+  // auth
+  const[am,sAm]=useState("signup");
+  const[ae,sAe]=useState("");
+  const[ap,sAp]=useState("");
+  const[pledge,sPledge]=useState(false);
   const[anim,sAnim]=useState(false);
   // signup
   const[sn,sSn]=useState("");
@@ -87,17 +84,92 @@ function App(){
   useEffect(()=>{setTimeout(()=>sAnim(true),100);},[]);
   useEffect(()=>{sAnim(false);setTimeout(()=>sAnim(true),50);track('page_view',{page:tab,city});},[tab,city,act]);
 
+  const loadTeas=useCallback(async()=>{
+    const{data,error}=await supabase.from("teatimes").select("*, host:profiles(name,avatar), rsvps(user_id, profiles(name))").gte("meet_date",today()).order("meet_date",{ascending:true});
+    if(!error&&data)sTeas(data.map(toCard));
+    sLoading(false);
+  },[]);
+  const loadProfile=useCallback(async(uid)=>{
+    if(!uid){sUser(null);return;}
+    const{data}=await supabase.from("profiles").select("*").eq("id",uid).maybeSingle();
+    sUser(data||null);
+    if(data){sCity(data.city);sSS(false);}
+  },[]);
+  useEffect(()=>{
+    loadTeas();
+    supabase.auth.getSession().then(({data})=>{sSession(data.session);loadProfile(data.session?.user?.id);});
+    const{data:sub}=supabase.auth.onAuthStateChange((_e,s)=>{sSession(s);loadProfile(s?.user?.id);});
+    return()=>sub.subscription.unsubscribe();
+  },[loadTeas,loadProfile]);
+
+  const uid=session?.user?.id;
+  const joined=uid?teas.filter(t=>t.joinedIds.includes(uid)).map(t=>t.id):[];
   const fil=teas.filter(t=>t.city===city&&(act==="all"||t.activity===act));
 
-  const doJoin=(id)=>{if(!user){sSS(true);track('signup_prompt',{trigger:'join'});return;}sJoined(p=>{const t=teas.find(x=>x.id===id);if(p.includes(id))return p.filter(x=>x!==id);track('join_teatime',{teatime_id:id,activity:t?.activity,city:t?.city});return[...p,id];});};
-  const doLike=(id)=>{sLiked(p=>{if(p.includes(id))return p.filter(x=>x!==id);track('like_teatime',{teatime_id:id});return[...p,id];});};
-  const doSignup=()=>{if(!sn.trim()||si.length<2)return;const u={name:sn.trim(),bio:sb.trim(),city:sc,interests:si,avatar:sa,trust:5.0};sUser(u);sSS(false);sCity(sc);track('sign_up',{city:sc,interests:si.join(',')});};
-  const doCreate=()=>{
-    if(!user){sSS(true);return;}
-    if(!ct.trim()||!ca||!cl.trim()||!cd||!cm.trim())return;
-    const nt={id:gid(),activity:ca,title:ct.trim(),hn:user.name,ha:user.avatar,city,loc:cl.trim(),date:cd,time:cm.trim(),total:cn,joined:[user.name],likes:0,desc:cx.trim()||"Come join us!"};
-    sTeas(p=>[nt,...p]);sCt("");sCa("");sCl("");sCd("");sCm("");sCx("");sCn(4);sCD(true);
+  const needAccount=()=>{sMsg("");sSS(true);track('signup_prompt',{});};
+  const doJoin=async(id)=>{
+    if(!user){needAccount();return;}
+    const t=teas.find(x=>x.id===id);
+    if(t&&t.host_id===uid){alert("You're the host of this Teatime.");return;}
+    if(joined.includes(id)){
+      const{error}=await supabase.from("rsvps").delete().eq("teatime_id",id).eq("user_id",uid);
+      if(error)alert("Sorry, something went wrong. Please try again.");
+    }else{
+      const{error}=await supabase.from("rsvps").insert({teatime_id:id,user_id:uid});
+      if(error)alert(error.message.includes("full")?"Sorry, this Teatime is full.":"Sorry, something went wrong. Please try again.");
+      else track('join_teatime',{activity:t?.activity,city:t?.city});
+    }
+    loadTeas();
+  };
+  const doAuth=async()=>{
+    sMsg("");if(!ae.trim()||ap.length<6){sMsg("Enter your email and a password of at least 6 characters.");return;}
+    sBusy(true);
+    if(am==="signup"){
+      const{data,error}=await supabase.auth.signUp({email:ae.trim(),password:ap,options:{emailRedirectTo:window.location.origin}});
+      if(error)sMsg(error.message);
+      else if(!data.session)sMsg("Almost there! Check your email and click the link to confirm your account, then log in.");
+      else track('sign_up',{});
+    }else{
+      const{error}=await supabase.auth.signInWithPassword({email:ae.trim(),password:ap});
+      if(error)sMsg(error.message.includes("confirm")?"Please confirm your email first. Check your inbox.":"Email or password is incorrect.");
+    }
+    sBusy(false);
+  };
+  const doSignup=async()=>{
+    if(!sn.trim()||si.length<2||!pledge||!uid)return;
+    sBusy(true);sMsg("");
+    const row={id:uid,name:sn.trim(),bio:sb.trim(),city:sc,interests:si,avatar:sa,pledge_accepted:true};
+    const{error}=await supabase.from("profiles").upsert(row);
+    sBusy(false);
+    if(error){sMsg("Sorry, we couldn't save your profile. Please try again.");return;}
+    sUser(row);sSS(false);sCity(sc);track('profile_created',{city:sc});
+  };
+  const doLogout=async()=>{await supabase.auth.signOut();sUser(null);sTab("home");};
+  const doCreate=async()=>{
+    if(!user){needAccount();return;}
+    if(!ct.trim()||!ca||!cl.trim()||!cd||!cm.trim()||busy)return;
+    if(cd<today()){alert("Please pick a date today or later.");return;}
+    sBusy(true);
+    const{data,error}=await supabase.from("teatimes").insert({host_id:uid,activity:ca,title:ct.trim(),location:cl.trim(),meet_date:cd,meet_time:cm.trim(),description:cx.trim(),city,max_spots:cn}).select().single();
+    if(!error&&data)await supabase.from("rsvps").insert({teatime_id:data.id,user_id:uid});
+    sBusy(false);
+    if(error){alert("Sorry, we couldn't create your Teatime. Please try again.");return;}
+    sCt("");sCa("");sCl("");sCd("");sCm("");sCx("");sCn(4);sCD(true);
     track('create_teatime',{activity:ca,city,total:cn});
+    loadTeas();
+  };
+  const doDelete=async(id)=>{
+    if(!window.confirm("Cancel this Teatime? Everyone who joined will lose their spot."))return;
+    const{error}=await supabase.from("teatimes").delete().eq("id",id).eq("host_id",uid);
+    if(error){alert("Sorry, something went wrong.");return;}
+    sDet(null);loadTeas();
+  };
+  const doReport=async(t)=>{
+    if(!user){needAccount();return;}
+    const reason=window.prompt("What happened? Tell us why you're reporting this Teatime or its host.");
+    if(!reason||!reason.trim())return;
+    const{error}=await supabase.from("reports").insert({reporter_id:uid,reported_user_id:t.host_id,teatime_id:t.id,reason:reason.trim().slice(0,500)});
+    alert(error?"Sorry, we couldn't send your report. Please try again.":"Thank you. Our team will review your report.");
   };
 
   const inp={width:"100%",padding:"12px 14px",borderRadius:12,border:`1px solid ${C.gray}`,fontFamily:F,fontSize:13,outline:"none",marginBottom:10,boxSizing:"border-box",background:C.bg};
@@ -107,7 +179,7 @@ function App(){
   if(showOb){
     const steps=[
       {e:"\uD83C\uDF75",t:"Welcome to Teatime",s:"Where real people meet.\nNo algorithms. No AI. Just you.",b:"Let's go"},
-      {e:"\uD83D\uDEE1\uFE0F",t:"Verified Humans Only",s:"Every person is ID-verified.\nNo bots. No fakes. No AI profiles.",b:"I like that"},
+      {e:"\uD83D\uDEE1\uFE0F",t:"Real People Only",s:"Every member takes the Real People pledge.\nFake or AI-made profiles get removed.",b:"I like that"},
       {e:"\uD83D\uDEAB",t:"Zero AI in Your Experience",s:"No AI writes your bio.\nNo AI picks your friends.\nEvery word here is human.",b:"Refreshing"},
       {e:"\u2600\uFE0F",t:"Show Up & Connect",s:"Pick an interest. Join a small group.\nThe magic happens in person.",b:"Find my Teatime"},
     ];
@@ -117,7 +189,7 @@ function App(){
       <div style={{fontSize:72,marginBottom:32,opacity:anim?1:0,transform:anim?"translateY(0)":"translateY(20px)",transition:"all 0.6s"}}>{st.e}</div>
       <h1 style={{fontFamily:D,fontSize:32,color:C.charcoal,margin:"0 0 16px",opacity:anim?1:0,transition:"all 0.6s 0.1s"}}>{st.t}</h1>
       <p style={{fontSize:16,color:C.brown,lineHeight:1.8,whiteSpace:"pre-line",maxWidth:320,marginBottom:40,opacity:anim?1:0,transition:"all 0.6s 0.2s"}}>{st.s}</p>
-      <button onClick={()=>obS<3?sObS(obS+1):sOb(false)} style={{fontFamily:F,fontSize:16,fontWeight:600,background:C.green,color:C.white,border:"none",padding:"14px 40px",borderRadius:50,cursor:"pointer",boxShadow:`0 4px 16px ${C.green}30`,opacity:anim?1:0,transition:"all 0.6s 0.3s"}}>{st.b}</button>
+      <button onClick={()=>{if(obS<3)sObS(obS+1);else{sOb(false);try{localStorage.setItem("tt_seen_intro","1");}catch(e){}}}} style={{fontFamily:F,fontSize:16,fontWeight:600,background:C.green,color:C.white,border:"none",padding:"14px 40px",borderRadius:50,cursor:"pointer",boxShadow:`0 4px 16px ${C.green}30`,opacity:anim?1:0,transition:"all 0.6s 0.3s"}}>{st.b}</button>
       <div style={{display:"flex",gap:8,marginTop:32}}>{steps.map((_,i)=><div key={i} style={{width:i===obS?24:8,height:8,borderRadius:4,background:i===obS?C.green:C.grayMid,transition:"all 0.3s"}}/>)}</div>
     </div>);
   }
@@ -126,8 +198,19 @@ function App(){
   const signM=showS?(<div style={{position:"fixed",inset:0,background:C.ov,zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>sSS(false)}>
     <link href={GL} rel="stylesheet"/>
     <div onClick={e=>e.stopPropagation()} style={{background:C.white,borderRadius:24,padding:24,maxWidth:420,width:"100%",maxHeight:"90vh",overflow:"auto"}}>
-      <h2 style={{fontFamily:D,fontSize:24,color:C.charcoal,margin:"0 0 4px"}}>Join Teatime</h2>
-      <p style={{color:C.brownLight,fontSize:12,margin:"0 0 20px"}}>Create your profile. Be real. {"\uD83C\uDF75"}</p>
+      {!session?(<>
+      <h2 style={{fontFamily:D,fontSize:24,color:C.charcoal,margin:"0 0 4px"}}>{am==="signup"?"Join Teatime":"Welcome back"}</h2>
+      <p style={{color:C.brownLight,fontSize:12,margin:"0 0 20px"}}>{am==="signup"?"Create your account. Be real.":"Log in to your account."} {"\uD83C\uDF75"}</p>
+      <span style={lbl}>Email</span>
+      <input type="email" value={ae} onChange={e=>sAe(e.target.value)} placeholder="you@example.com" style={inp} autoComplete="email"/>
+      <span style={lbl}>Password</span>
+      <input type="password" value={ap} onChange={e=>sAp(e.target.value)} placeholder="At least 6 characters" style={inp} autoComplete={am==="signup"?"new-password":"current-password"}/>
+      {msg&&<div style={{fontSize:12,color:msg.startsWith("Almost")?C.green:C.danger,margin:"4px 0 12px",lineHeight:1.5}}>{msg}</div>}
+      <button onClick={doAuth} disabled={busy} style={{width:"100%",padding:14,fontFamily:F,fontSize:16,fontWeight:600,background:C.green,color:C.white,border:"none",borderRadius:50,cursor:"pointer",marginTop:6}}>{busy?"Please wait...":am==="signup"?"Create account":"Log in"}</button>
+      <div style={{textAlign:"center",marginTop:14,fontSize:13,color:C.brown}}>{am==="signup"?"Already have an account? ":"New to Teatime? "}<button onClick={()=>{sAm(am==="signup"?"login":"signup");sMsg("");}} style={{background:"none",border:"none",color:C.green,fontWeight:600,cursor:"pointer",fontFamily:F,fontSize:13,padding:0}}>{am==="signup"?"Log in":"Sign up"}</button></div>
+      </>):(<>
+      <h2 style={{fontFamily:D,fontSize:24,color:C.charcoal,margin:"0 0 4px"}}>Create your profile</h2>
+      <p style={{color:C.brownLight,fontSize:12,margin:"0 0 20px"}}>Tell people who you are. Be real. {"\uD83C\uDF75"}</p>
       <span style={lbl}>Avatar</span>
       <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>{AVATARS.map(a=><button key={a} onClick={()=>sSa(a)} style={{width:44,height:44,borderRadius:14,border:`2px solid ${sa===a?C.green:"transparent"}`,background:sa===a?C.greenLight:C.gray,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,cursor:"pointer"}}>{a}</button>)}</div>
       <span style={lbl}>Your name</span>
@@ -139,14 +222,20 @@ function App(){
       <div style={{display:"flex",gap:6,marginBottom:16}}>{CITIES.map(c=><button key={c.id} onClick={()=>sSc(c.id)} style={{flex:1,padding:10,borderRadius:12,border:`1.5px solid ${sc===c.id?C.green:C.grayMid}`,background:sc===c.id?C.greenLight:C.white,fontFamily:F,fontSize:12,cursor:"pointer",color:sc===c.id?C.green:C.brown,fontWeight:sc===c.id?600:400}}>{c.icon} {c.label}</button>)}</div>
       <span style={lbl}>Interests (pick 2+)</span>
       <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:20}}>{ACTS.filter(a=>a.id!=="all").map(a=>{const sel=si.includes(a.id);return <button key={a.id} onClick={()=>sSi(sel?si.filter(x=>x!==a.id):[...si,a.id])} style={{padding:"6px 12px",borderRadius:12,border:`1.5px solid ${sel?a.color:C.grayMid}`,background:sel?`${a.color}15`:C.white,fontSize:12,cursor:"pointer",fontFamily:F,color:sel?a.color:C.brown,fontWeight:sel?600:400}}>{a.emoji} {a.label}</button>;})}</div>
-      <button onClick={doSignup} disabled={!sn.trim()||si.length<2} style={{width:"100%",padding:14,fontFamily:F,fontSize:16,fontWeight:600,background:sn.trim()&&si.length>=2?C.green:C.grayMid,color:C.white,border:"none",borderRadius:50,cursor:sn.trim()&&si.length>=2?"pointer":"not-allowed"}}>{sn.trim()&&si.length>=2?"Join Teatime \u2600\uFE0F":"Pick name and 2+ interests"}</button>
+      <label style={{display:"flex",gap:10,alignItems:"flex-start",background:C.greenLight,borderRadius:12,padding:12,marginBottom:16,cursor:"pointer"}}>
+        <input type="checkbox" checked={pledge} onChange={e=>sPledge(e.target.checked)} style={{marginTop:3}}/>
+        <span style={{fontSize:12,color:C.greenDark,lineHeight:1.6}}><b>The Real People pledge.</b> I'm a real person, this is my real name, and I write my own words. I'll meet in public places and treat everyone with respect.</span>
+      </label>
+      {msg&&<div style={{fontSize:12,color:C.danger,marginBottom:12}}>{msg}</div>}
+      {(()=>{const ok=sn.trim()&&si.length>=2&&pledge&&!busy;return <button onClick={doSignup} disabled={!ok} style={{width:"100%",padding:14,fontFamily:F,fontSize:16,fontWeight:600,background:ok?C.green:C.grayMid,color:C.white,border:"none",borderRadius:50,cursor:ok?"pointer":"not-allowed"}}>{busy?"Saving...":ok?"Join Teatime \u2600\uFE0F":"Add name, 2+ interests, and the pledge"}</button>;})()}
+      </>)}
     </div>
   </div>):null;
 
   // Nav
   const nav=(<div style={{position:"fixed",bottom:0,left:0,right:0,background:C.white,borderTop:`1px solid ${C.gray}`,display:"flex",justifyContent:"space-around",padding:"6px 0 max(8px,env(safe-area-inset-bottom))",zIndex:300}}>
     {[{id:"home",ic:"\uD83C\uDFE0",lb:"Home"},{id:"discover",ic:"\uD83D\uDD0D",lb:"Discover"},{id:"create",ic:"+",lb:"",cr:true},{id:"about",ic:"\uD83C\uDF75",lb:"About"},{id:"me",ic:"\uD83D\uDC64",lb:"Me"}].map(n=>
-      <button key={n.id} onClick={()=>{if(n.id==="create"){if(!user)sSS(true);else{sSC(true);sCD(false);}}else{sTab(n.id);sDet(null);}}} style={{fontFamily:F,fontSize:n.cr?0:10,color:tab===n.id?C.green:C.brownLight,background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"4px 12px",fontWeight:tab===n.id?600:400}}>
+      <button key={n.id} onClick={()=>{if(n.id==="create"){if(!user)needAccount();else{sSC(true);sCD(false);}}else{sTab(n.id);sDet(null);}}} style={{fontFamily:F,fontSize:n.cr?0:10,color:tab===n.id?C.green:C.brownLight,background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"4px 12px",fontWeight:tab===n.id?600:400}}>
         {n.cr?<div style={{width:44,height:44,borderRadius:22,background:C.green,display:"flex",alignItems:"center",justifyContent:"center",color:C.white,fontSize:24,fontWeight:700,marginTop:-18,boxShadow:`0 4px 12px ${C.green}40`}}>+</div>:<><span style={{fontSize:22}}>{n.ic}</span>{n.lb}</>}
       </button>
     )}
@@ -169,12 +258,12 @@ function App(){
   </div>);
 
   // Card
-  const Card=({t})=>{const ac=ga(t.activity);const lk=liked.includes(t.id);const jn=joined.includes(t.id);const sp=t.total-(t.joined?.length||0)-(jn?1:0);
+  const Card=({t})=>{const ac=ga(t.activity);const jn=joined.includes(t.id);const host=t.host_id===uid;const sp=t.total-t.joinedIds.length;
     return(<div style={{background:C.card,borderRadius:20,marginBottom:14,overflow:"hidden",border:`1px solid ${C.gray}`}}>
       <div style={{display:"flex",alignItems:"center",padding:"12px 14px",gap:10}}>
         <div style={{width:38,height:38,borderRadius:12,background:`${ac.color}15`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,border:`2px solid ${ac.color}30`}}>{t.ha||"\uD83E\uDDD1"}</div>
         <div style={{flex:1}}>
-          <div style={{display:"flex",alignItems:"center",gap:5}}><span style={{fontSize:13,fontWeight:600,color:C.charcoal}}>{t.hn}</span><span style={{fontSize:11,color:C.green}}>{"\u2713"}</span></div>
+          <div style={{display:"flex",alignItems:"center",gap:5}}><span style={{fontSize:13,fontWeight:600,color:C.charcoal}}>{t.hn}</span></div>
           <div style={{fontSize:11,color:C.brownLight}}>{fd(t.date)} {"\u00B7"} {t.time}</div>
         </div>
         <div style={{padding:"3px 9px",borderRadius:10,background:`${ac.color}12`,fontSize:10,fontWeight:600,color:ac.color}}>{ac.emoji} {ac.label}</div>
@@ -185,13 +274,12 @@ function App(){
         <div style={{fontSize:12,color:C.brownLight,marginBottom:10}}>{"\uD83D\uDCCD"} {t.loc}</div>
         <div style={{display:"flex",alignItems:"center"}}>
           <span style={{fontSize:11,color:sp<=2?C.terra:C.brownLight,fontWeight:sp<=2?600:400}}>{"\uD83D\uDC65"} {Math.max(0,sp)} spot{sp!==1?"s":""} left</span>
-          {jn&&<span style={{fontSize:11,color:C.green,fontWeight:600,marginLeft:8}}>{"\u2713"} Going</span>}
+          {host?<span style={{fontSize:11,color:C.terra,fontWeight:600,marginLeft:8}}>You're hosting</span>:jn&&<span style={{fontSize:11,color:C.green,fontWeight:600,marginLeft:8}}>{"\u2713"} Going</span>}
         </div>
       </div>
       <div style={{display:"flex",borderTop:`1px solid ${C.gray}`}}>
-        <button onClick={e=>{e.stopPropagation();doLike(t.id);}} style={{flex:1,fontFamily:F,fontSize:12,fontWeight:500,color:lk?C.danger:C.brownLight,background:"none",border:"none",borderRight:`1px solid ${C.gray}`,padding:10,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:5}}>{lk?"\u2764\uFE0F":"\uD83E\uDD0D"} {(t.likes||0)+(lk?1:0)}</button>
         <button onClick={e=>{e.stopPropagation();sDet(t.id);}} style={{flex:1,fontFamily:F,fontSize:12,fontWeight:500,color:C.brownLight,background:"none",border:"none",borderRight:`1px solid ${C.gray}`,padding:10,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:5}}>{"\uD83D\uDCAC"} Details</button>
-        <button onClick={e=>{e.stopPropagation();doJoin(t.id);}} style={{flex:1.2,fontFamily:F,fontSize:12,fontWeight:600,color:jn?C.green:C.white,background:jn?C.greenLight:C.green,border:"none",padding:10,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:5}}>{jn?"\u2713 Joined":"Join \u2600\uFE0F"}</button>
+        {host?<button onClick={e=>{e.stopPropagation();sDet(t.id);}} style={{flex:1.2,fontFamily:F,fontSize:12,fontWeight:600,color:C.terra,background:C.terraLight,border:"none",padding:10,cursor:"pointer"}}>Manage</button>:<button onClick={e=>{e.stopPropagation();doJoin(t.id);}} disabled={!jn&&sp<=0} style={{flex:1.2,fontFamily:F,fontSize:12,fontWeight:600,color:jn?C.green:C.white,background:jn?C.greenLight:sp<=0?C.grayMid:C.green,border:"none",padding:10,cursor:!jn&&sp<=0?"not-allowed":"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:5}}>{jn?"\u2713 Joined":sp<=0?"Full":"Join \u2600\uFE0F"}</button>}
       </div>
     </div>);
   };
@@ -226,15 +314,15 @@ function App(){
           <span style={{fontSize:11,color:C.brownLight}}>Max group:</span>
           {[2,4,6,8].map(n=><button key={n} onClick={()=>sCn(n)} style={{width:38,height:38,borderRadius:12,border:`1.5px solid ${cn===n?C.green:C.grayMid}`,background:cn===n?C.greenLight:C.white,fontSize:14,cursor:"pointer",fontFamily:F,color:cn===n?C.green:C.brown,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:cn===n?600:400}}>{n}</button>)}
         </div>
-        <button onClick={doCreate} style={{width:"100%",padding:13,fontFamily:F,fontSize:15,fontWeight:600,background:ct.trim()&&ca&&cl.trim()&&cd&&cm.trim()?C.green:C.grayMid,color:C.white,border:"none",borderRadius:50,cursor:ct.trim()&&ca&&cl.trim()&&cd&&cm.trim()?"pointer":"not-allowed"}}>Create Teatime {"\u2600\uFE0F"}</button>
+        <button onClick={doCreate} style={{width:"100%",padding:13,fontFamily:F,fontSize:15,fontWeight:600,background:ct.trim()&&ca&&cl.trim()&&cd&&cm.trim()?C.green:C.grayMid,color:C.white,border:"none",borderRadius:50,cursor:ct.trim()&&ca&&cl.trim()&&cd&&cm.trim()?"pointer":"not-allowed"}}>{busy?"Creating...":<>Create Teatime {"\u2600\uFE0F"}</>}</button>
       </>)}
     </div>
   </div>):null;
 
   // Detail
-  if(det){const t=teas.find(x=>x.id===det);if(!t){sDet(null);return null;}const ac=ga(t.activity);const jn=joined.includes(t.id);const sp=t.total-(t.joined?.length||0)-(jn?1:0);
+  if(det){const t=teas.find(x=>x.id===det);if(!t){sDet(null);return null;}const ac=ga(t.activity);const jn=joined.includes(t.id);const host=t.host_id===uid;const sp=t.total-t.joinedIds.length;
     return(<div style={{minHeight:"100vh",background:C.bg,fontFamily:F,paddingBottom:80}}>
-      <link href={GL} rel="stylesheet"/>{top}
+      <link href={GL} rel="stylesheet"/>{top}{crM}{signM}
       <div style={{maxWidth:500,margin:"0 auto",padding:16}}>
         <button onClick={()=>sDet(null)} style={{fontFamily:F,fontSize:13,color:C.brownLight,background:"none",border:"none",cursor:"pointer",marginBottom:10,padding:0}}>{"\u2190"} Back</button>
         <div style={{background:C.card,borderRadius:20,overflow:"hidden",border:`1px solid ${C.gray}`}}>
@@ -252,11 +340,13 @@ function App(){
             <div style={{marginBottom:16}}>
               <div style={{fontSize:11,fontWeight:600,color:C.greenDark,marginBottom:8}}>Who's coming</div>
               <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                {(t.joined||[]).map((n,i)=><div key={i} style={{padding:"6px 12px",background:C.greenLight,borderRadius:12,fontSize:12,color:C.greenDark,fontWeight:500,display:"flex",alignItems:"center",gap:5}}>{n} <span style={{color:C.green,fontSize:10}}>{"\u2713"}</span></div>)}
-                {jn&&user&&<div style={{padding:"6px 12px",background:C.terraLight,borderRadius:12,fontSize:12,color:C.terra,fontWeight:500}}>You!</div>}
+                {t.joinedIds.map((id,i)=><div key={id} style={{padding:"6px 12px",background:id===uid?C.terraLight:C.greenLight,borderRadius:12,fontSize:12,color:id===uid?C.terra:C.greenDark,fontWeight:500}}>{id===uid?"You":t.joined[i]}{id===t.host_id?" (host)":""}</div>)}
               </div>
             </div>
-            <button onClick={()=>doJoin(t.id)} style={{width:"100%",padding:13,fontFamily:F,fontSize:15,fontWeight:600,background:jn?C.greenLight:C.green,color:jn?C.greenDark:C.white,border:"none",borderRadius:50,cursor:"pointer"}}>{jn?"\u2713 You're going!":"Join this Teatime \u2600\uFE0F"}</button>
+            {host?<button onClick={()=>doDelete(t.id)} style={{width:"100%",padding:13,fontFamily:F,fontSize:15,fontWeight:600,background:C.white,color:C.danger,border:`1.5px solid ${C.danger}`,borderRadius:50,cursor:"pointer"}}>Cancel this Teatime</button>
+            :<button onClick={()=>doJoin(t.id)} disabled={!jn&&sp<=0} style={{width:"100%",padding:13,fontFamily:F,fontSize:15,fontWeight:600,background:jn?C.greenLight:sp<=0?C.grayMid:C.green,color:jn?C.greenDark:C.white,border:"none",borderRadius:50,cursor:!jn&&sp<=0?"not-allowed":"pointer"}}>{jn?"\u2713 You're going! (tap to leave)":sp<=0?"This Teatime is full":"Join this Teatime \u2600\uFE0F"}</button>}
+            {!host&&<button onClick={()=>doReport(t)} style={{display:"block",margin:"14px auto 0",background:"none",border:"none",color:C.brownLight,fontFamily:F,fontSize:12,cursor:"pointer",textDecoration:"underline"}}>Report this Teatime</button>}
+            <div style={{fontSize:11,color:C.brownLight,textAlign:"center",marginTop:12,lineHeight:1.6}}>{"\uD83D\uDEE1\uFE0F"} Always meet in a public place and let a friend know where you're going.</div>
           </div>
         </div>
       </div>{nav}
@@ -265,14 +355,14 @@ function App(){
 
   // About
   if(tab==="about"){return(<div style={{minHeight:"100vh",background:C.bg,fontFamily:F,paddingBottom:80}}>
-    <link href={GL} rel="stylesheet"/>{top}
+    <link href={GL} rel="stylesheet"/>{top}{crM}{signM}
     <div style={{maxWidth:500,margin:"0 auto",padding:"24px 16px",textAlign:"center"}}>
       <div style={{fontSize:48,marginBottom:12}}>{"\uD83C\uDF75"}</div>
       <h2 style={{fontFamily:D,fontSize:28,color:C.charcoal,marginBottom:8}}>About Teatime</h2>
       <p style={{fontSize:14,color:C.brown,lineHeight:1.8,marginBottom:24}}>Teatime is where real people meet over shared interests. No algorithms decide who you see. No AI writes your messages. Just real humans showing up and connecting in person.</p>
       <div style={{background:C.card,borderRadius:16,padding:20,border:`1px solid ${C.gray}`,textAlign:"left",marginBottom:16}}>
         <h3 style={{fontFamily:D,fontSize:18,color:C.greenDark,marginBottom:12}}>The Teatime Promise</h3>
-        {["Every profile is a verified real person","Every word is written by a human","Every photo is real, no AI generation","Every connection is earned by showing up","AI guards the door. Humans keep the room real."].map((p,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:i<4?`1px solid ${C.gray}`:"none"}}><span style={{color:C.gold}}>{"\u2726"}</span><span style={{fontSize:13,color:C.brown}}>{p}</span></div>)}
+        {["Every member takes the Real People pledge","Every word is written by a human","Fake or AI-made profiles are removed","Every connection is earned by showing up","Anyone can report something that feels off"].map((p,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:i<4?`1px solid ${C.gray}`:"none"}}><span style={{color:C.gold}}>{"\u2726"}</span><span style={{fontSize:13,color:C.brown}}>{p}</span></div>)}
       </div>
       <p style={{fontSize:12,color:C.brownLight}}>Bay Area {"\u00B7"} Seattle {"\u00B7"} Vancouver</p>
       <p style={{fontSize:11,color:C.brownLight,marginTop:8}}>{"\uD83C\uDF75"} Be real. Meet real.</p>
@@ -285,32 +375,38 @@ function App(){
       <link href={GL} rel="stylesheet"/>{top}
       <div style={{maxWidth:500,margin:"0 auto",padding:"40px 16px",textAlign:"center"}}>
         <div style={{fontSize:48,marginBottom:16}}>{"\uD83D\uDC64"}</div>
-        <h2 style={{fontFamily:D,fontSize:24,color:C.charcoal,marginBottom:8}}>Join Teatime</h2>
-        <p style={{color:C.brown,fontSize:14,marginBottom:24}}>Create your profile to host and join Teatimes.</p>
-        <button onClick={()=>sSS(true)} style={{fontFamily:F,fontSize:15,fontWeight:600,background:C.green,color:C.white,border:"none",padding:"14px 36px",borderRadius:50,cursor:"pointer"}}>Create Profile {"\u2600\uFE0F"}</button>
+        <h2 style={{fontFamily:D,fontSize:24,color:C.charcoal,marginBottom:8}}>{session?"Finish your profile":"Join Teatime"}</h2>
+        <p style={{color:C.brown,fontSize:14,marginBottom:24}}>{session?"One more step before you can host and join Teatimes.":"Create your profile to host and join Teatimes."}</p>
+        <button onClick={needAccount} style={{fontFamily:F,fontSize:15,fontWeight:600,background:C.green,color:C.white,border:"none",padding:"14px 36px",borderRadius:50,cursor:"pointer"}}>Create Profile {"\u2600\uFE0F"}</button>
+        {session?<button onClick={doLogout} style={{display:"block",margin:"20px auto 0",background:"none",border:"none",color:C.brownLight,fontFamily:F,fontSize:13,cursor:"pointer",textDecoration:"underline"}}>Log out</button>
+        :<button onClick={()=>{sAm("login");needAccount();}} style={{display:"block",margin:"20px auto 0",background:"none",border:"none",color:C.green,fontFamily:F,fontSize:13,cursor:"pointer",fontWeight:600}}>Already a member? Log in</button>}
       </div>{signM}{nav}
     </div>);
+    const mine=teas.filter(t=>t.joinedIds.includes(uid));
     return(<div style={{minHeight:"100vh",background:C.bg,fontFamily:F,paddingBottom:80}}>
-      <link href={GL} rel="stylesheet"/>{top}
+      <link href={GL} rel="stylesheet"/>{top}{crM}{signM}
       <div style={{maxWidth:500,margin:"0 auto",padding:"20px 16px"}}>
         <div style={{textAlign:"center",marginBottom:24}}>
           <div style={{width:80,height:80,borderRadius:24,background:C.terraLight,display:"flex",alignItems:"center",justifyContent:"center",fontSize:38,margin:"0 auto 10px",border:`3px solid ${C.terra}30`}}>{user.avatar}</div>
           <h2 style={{fontFamily:D,fontSize:24,color:C.charcoal,margin:"0 0 4px"}}>{user.name}</h2>
-          <span style={{background:C.greenLight,color:C.green,fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:8}}>{"\u2713"} Verified Human</span>
+          <span style={{background:C.greenLight,color:C.green,fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:8}}>{"\uD83C\uDF75"} Took the Real People pledge</span>
           <div style={{display:"flex",justifyContent:"center",gap:28,margin:"16px 0"}}>
-            <div><div style={{fontSize:20,fontWeight:700,color:C.charcoal}}>{joined.length}</div><div style={{fontSize:11,color:C.brownLight}}>Joined</div></div>
-            <div><div style={{fontSize:20,fontWeight:700,color:C.gold}}>{"\u2605"} {user.trust}</div><div style={{fontSize:11,color:C.brownLight}}>Trust</div></div>
+            <div><div style={{fontSize:20,fontWeight:700,color:C.charcoal}}>{mine.filter(t=>t.host_id!==uid).length}</div><div style={{fontSize:11,color:C.brownLight}}>Joining</div></div>
+            <div><div style={{fontSize:20,fontWeight:700,color:C.terra}}>{teas.filter(t=>t.host_id===uid).length}</div><div style={{fontSize:11,color:C.brownLight}}>Hosting</div></div>
           </div>
           {user.bio&&<p style={{fontSize:13,color:C.brown,lineHeight:1.7,maxWidth:320,margin:"0 auto 12px"}}>{user.bio}</p>}
           <div style={{display:"flex",gap:6,justifyContent:"center",flexWrap:"wrap"}}>{(user.interests||[]).map(i=>{const a=ga(i);return <span key={i} style={{padding:"4px 10px",borderRadius:10,background:`${a.color}12`,fontSize:11,color:a.color,fontWeight:500}}>{a.emoji} {a.label}</span>;})}</div>
         </div>
+        <h3 style={{fontFamily:D,fontSize:18,color:C.charcoal,margin:"0 0 10px"}}>My upcoming Teatimes</h3>
+        {mine.length===0?<p style={{fontSize:13,color:C.brownLight}}>Nothing yet. Find one on the Home tab!</p>:mine.map(t=><Card key={t.id} t={t}/>)}
+        <button onClick={doLogout} style={{display:"block",margin:"20px auto 0",background:"none",border:"none",color:C.brownLight,fontFamily:F,fontSize:13,cursor:"pointer",textDecoration:"underline"}}>Log out</button>
       </div>{nav}
     </div>);
   }
 
   // Discover
   if(tab==="discover"){return(<div style={{minHeight:"100vh",background:C.bg,fontFamily:F,paddingBottom:80}}>
-    <link href={GL} rel="stylesheet"/>{top}
+    <link href={GL} rel="stylesheet"/>{top}{crM}{signM}
     <div style={{maxWidth:500,margin:"0 auto",padding:16}}>
       <h2 style={{fontFamily:D,fontSize:22,color:C.charcoal,marginBottom:4}}>Discover Activities</h2>
       <p style={{fontSize:12,color:C.brownLight,marginBottom:16}}>Find your next Teatime by interest</p>
@@ -329,17 +425,20 @@ function App(){
   return(<div style={{minHeight:"100vh",background:C.bg,fontFamily:F,paddingBottom:80}}>
     <link href={GL} rel="stylesheet"/>{top}{stories}{crM}{signM}
     <div style={{maxWidth:500,margin:"0 auto",padding:"6px 16px"}}>
-      {!user&&<div style={{background:C.greenLight,borderRadius:14,padding:"12px 16px",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between",border:`1px solid ${C.green}25`}}>
-        <span style={{fontSize:13,color:C.greenDark}}>Join to create and attend Teatimes</span>
-        <button onClick={()=>sSS(true)} style={{fontFamily:F,fontSize:12,fontWeight:600,background:C.green,color:C.white,border:"none",padding:"6px 14px",borderRadius:20,cursor:"pointer"}}>Sign up</button>
+      {loading&&<div style={{textAlign:"center",padding:40,color:C.brownLight,fontSize:13}}>Loading Teatimes...</div>}
+      {!loading&&!user&&<div style={{background:C.greenLight,borderRadius:14,padding:"12px 16px",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between",border:`1px solid ${C.green}25`}}>
+        <span style={{fontSize:13,color:C.greenDark}}>{session?"Finish your profile to join Teatimes":"Join to create and attend Teatimes"}</span>
+        <button onClick={needAccount} style={{fontFamily:F,fontSize:12,fontWeight:600,background:C.green,color:C.white,border:"none",padding:"6px 14px",borderRadius:20,cursor:"pointer"}}>Sign up</button>
       </div>}
+      {!loading&&<>
       <div style={{fontSize:12,color:C.brownLight,marginBottom:10}}>{fil.length} teatime{fil.length!==1?"s":""} in {CITIES.find(c=>c.id===city)?.label}</div>
       {fil.length===0?<div style={{textAlign:"center",padding:"44px 20px",background:C.white,borderRadius:20,border:`1px solid ${C.gray}`}}>
         <div style={{fontSize:36,marginBottom:10}}>{"\uD83C\uDF75"}</div>
         <div style={{fontFamily:D,fontSize:18,color:C.charcoal,marginBottom:6}}>No Teatimes here yet</div>
         <div style={{color:C.brownLight,fontSize:13,marginBottom:16}}>Be the first to host one!</div>
-        <button onClick={()=>{if(!user)sSS(true);else{sSC(true);sCD(false);}}} style={{fontFamily:F,fontSize:13,fontWeight:600,background:C.terra,color:C.white,border:"none",padding:"10px 22px",borderRadius:50,cursor:"pointer"}}>Host a Teatime {"\u2600\uFE0F"}</button>
+        <button onClick={()=>{if(!user)needAccount();else{sSC(true);sCD(false);}}} style={{fontFamily:F,fontSize:13,fontWeight:600,background:C.terra,color:C.white,border:"none",padding:"10px 22px",borderRadius:50,cursor:"pointer"}}>Host a Teatime {"\u2600\uFE0F"}</button>
       </div>:fil.map(t=><Card key={t.id} t={t}/>)}
+      </>}
     </div>{nav}
   </div>);
 }
